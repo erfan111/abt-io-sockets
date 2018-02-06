@@ -28,3 +28,15 @@ m4/ltoptions.m4
 m4/ltsugar.m4
 m4/ltversion.m4
 m4/lt~obsolete.m4
+examples/.*
+examples/abt-io-overlap
+examples/abt_socket.out
+examples/concurrent-write-bench
+examples/pthread-overlap
+*.gch
+*.pc
+src/.*
+*.lo
+*.la
+stamp-h1
+libtool

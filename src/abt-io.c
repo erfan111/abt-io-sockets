@@ -1,7 +1,7 @@
 
 /*
  * (C) 2015 The University of Chicago
- * 
+ *
  * See COPYRIGHT in top-level directory.
  */
 
@@ -263,7 +263,7 @@ err:
     return -1;
 }
 
-ssize_t abt_io_pread(abt_io_instance_id aid, int fd, void *buf, 
+ssize_t abt_io_pread(abt_io_instance_id aid, int fd, void *buf,
         size_t count, off_t offset)
 {
     ssize_t ret = -1;
@@ -355,7 +355,7 @@ err:
     return -1;
 }
 
-ssize_t abt_io_pwrite(abt_io_instance_id aid, int fd, const void *buf, 
+ssize_t abt_io_pwrite(abt_io_instance_id aid, int fd, const void *buf,
         size_t count, off_t offset)
 {
     ssize_t ret = -1;
@@ -642,3 +642,160 @@ void abt_io_op_free(abt_io_op_t* op)
     op->free_fn(op->state);
     free(op);
 }
+
+
+// =e
+// READ syscall
+struct abt_io_read_state
+{
+    ssize_t *ret;
+    int fd;
+    void *buf;
+    size_t count;
+    ABT_eventual eventual;
+};
+
+static void abt_io_read_fn(void *foo)
+{
+    struct abt_io_read_state *state = foo;
+
+    *state->ret = read(state->fd, state->buf, state->count);
+    if(*state->ret < 0)
+        *state->ret = -errno;
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+}
+
+static int issue_read(ABT_pool pool, abt_io_op_t *op, int fd, void *buf,
+        size_t count, ssize_t *ret)
+{
+    struct abt_io_read_state state;
+    struct abt_io_read_state *pstate = NULL;
+    int rc;
+
+    if (op == NULL) pstate = &state;
+    else
+    {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) { *ret = -ENOMEM; goto err; }
+    }
+
+    *ret = -ENOSYS;
+    pstate->ret = ret;
+    pstate->fd = fd;
+    pstate->buf = buf;
+    pstate->count = count;
+    pstate->eventual = NULL;
+    rc = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_read_fn, pstate, NULL);
+    if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+    }
+    else {
+        op->e = pstate->eventual;
+        op->state = pstate;
+        op->free_fn = free;
+    }
+
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+ssize_t abt_io_read(abt_io_instance_id aid, int fd, void *buf, size_t count)
+{
+    ssize_t ret = -1;
+    issue_read(aid->progress_pool, NULL, fd, buf, count, &ret);
+    return ret;
+}
+
+
+// WRITE system call
+
+struct abt_io_write_state
+{
+    ssize_t *ret;
+    int fd;
+    const void *buf;
+    size_t count;
+    ABT_eventual eventual;
+};
+
+static void abt_io_write_fn(void *foo)
+{
+    struct abt_io_write_state *state = foo;
+
+    *state->ret = write(state->fd, state->buf, state->count);
+    if(*state->ret < 0)
+        *state->ret = -errno;
+
+    ABT_eventual_set(state->eventual, NULL, 0);
+    return;
+};
+
+static int issue_write(ABT_pool pool, abt_io_op_t *op, int fd, const void *buf,
+        size_t count, ssize_t *ret)
+{
+    struct abt_io_write_state state;
+    struct abt_io_write_state *pstate = NULL;
+    int rc;
+
+    if (op == NULL) pstate = &state;
+    else
+    {
+        pstate = malloc(sizeof(*pstate));
+        if (pstate == NULL) { *ret = -ENOMEM; goto err; }
+    }
+
+    *ret = -ENOSYS;
+    pstate->ret = ret;
+    pstate->fd = fd;
+    pstate->buf = buf;
+    pstate->count = count;
+    pstate->eventual = NULL;
+    rc = ABT_eventual_create(0, &pstate->eventual);
+    if (rc != ABT_SUCCESS) { *ret = -ENOMEM; goto err; }
+
+    if (op != NULL) op->e = pstate->eventual;
+
+    rc = ABT_task_create(pool, abt_io_write_fn, pstate, NULL);
+    if(rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+
+    if (op == NULL) {
+        rc = ABT_eventual_wait(pstate->eventual, NULL);
+        // what error should we use here?
+        if (rc != ABT_SUCCESS) { *ret = -EINVAL; goto err; }
+    }
+    else {
+        op->e = pstate->eventual;
+        op->state = pstate;
+        op->free_fn = free;
+    }
+
+    return 0;
+err:
+    if (pstate->eventual != NULL) ABT_eventual_free(&pstate->eventual);
+    if (pstate != NULL && op != NULL) free(pstate);
+    return -1;
+}
+
+ssize_t abt_io_write(abt_io_instance_id aid, int fd, const void *buf,
+        size_t count)
+{
+    ssize_t ret = -1;
+    issue_write(aid->progress_pool, NULL, fd, buf, count, &ret);
+    return ret;
+}
+
+//

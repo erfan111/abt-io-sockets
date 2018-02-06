@@ -1,6 +1,6 @@
 /*
  * (C) 2015 The University of Chicago
- * 
+ *
  * See COPYRIGHT in top-level directory.
  */
 
@@ -50,7 +50,7 @@ abt_io_instance_id abt_io_init_pool(ABT_pool progress_pool);
  */
 void abt_io_finalize(abt_io_instance_id aid);
 
-/** 
+/**
  * wrapper for open()
  */
 int abt_io_open(
@@ -59,7 +59,7 @@ int abt_io_open(
         int flags,
         mode_t mode);
 
-/** 
+/**
  * non-blocking wrapper for open()
  */
 abt_io_op_t* abt_io_open_nb(
@@ -125,12 +125,12 @@ abt_io_op_t* abt_io_mkostemp_nb(
         int flags,
         int *ret);
 
-/** 
+/**
  * wrapper for unlink()
  */
 int abt_io_unlink(abt_io_instance_id aid, const char *pathname);
 
-/** 
+/**
  * non-blocking wrapper for unlink()
  */
 abt_io_op_t* abt_io_unlink_nb(
@@ -159,6 +159,22 @@ int abt_io_op_wait(abt_io_op_t* op);
  * successfully waited on
  */
 void abt_io_op_free(abt_io_op_t* op);
+
+// =e
+// READ system call wrapper
+ssize_t abt_io_read(
+        abt_io_instance_id aid,
+        int fd,
+        void *buf,
+        size_t count);
+
+// WRITE system call wrapper
+ssize_t abt_io_write(
+        abt_io_instance_id aid,
+        int fd,
+        const void *buf,
+        size_t count);
+//
 
 #ifdef __cplusplus
 }
