@@ -861,10 +861,11 @@ int abt_io_socket_initialize(int events)
     ABT_pool_create_basic(ABT_POOL_FIFO, ABT_POOL_ACCESS_MPMC, ABT_TRUE, &g_pool);
     ABT_xstream_create_basic(ABT_SCHED_DEFAULT, 1, &g_pool, ABT_SCHED_CONFIG_NULL, &xstream);
     ABT_xstream_start(xstream);
-    int epfd = epoll_create(1);
+    int* epfd = (int*) malloc(sizeof(int));
+    *epfd = epoll_create(1);
     //printf(" epoll created fd %d \n", epfd);
-    ABT_thread_create(g_pool, event_listener, &epfd, ABT_THREAD_ATTR_NULL, listener);
-    return epfd;
+    ABT_thread_create(g_pool, event_listener, epfd, ABT_THREAD_ATTR_NULL, listener);
+    return *epfd;
 }
 
 io_instance_t* abt_io_register_thread(struct thread_args* ta)
