@@ -161,6 +161,28 @@ int abt_io_op_wait(abt_io_op_t* op);
 void abt_io_op_free(abt_io_op_t* op);
 
 // =e
+
+typedef struct io_instance
+{
+    int epfd;
+    ABT_mutex mutex;
+    ABT_cond cond;
+} io_instance_t;
+
+struct thread_args
+{
+    int epfd;
+    int fd;
+    ABT_cond cond;
+};
+
+int abt_io_socket_initialize(int events);
+
+io_instance_t* abt_io_register_thread(struct thread_args* ta);
+
+ssize_t abt_io_epoll_read(io_instance_t* instance, int fd, const void *buf, size_t count);
+
+
 // READ system call wrapper
 ssize_t abt_io_read(
         abt_io_instance_id aid,

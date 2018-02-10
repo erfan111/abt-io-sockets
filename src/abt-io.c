@@ -18,6 +18,8 @@
 
 #include <abt.h>
 #include <abt-snoozer.h>
+// =e
+#include <sys/epoll.h>
 
 #include "abt-io.h"
 
@@ -798,4 +800,114 @@ ssize_t abt_io_write(abt_io_instance_id aid, int fd, const void *buf,
     return ret;
 }
 
+////////////////////////////////////////////
+
+
+void event_listener(void* foo)
+{
+    int epfd = *(int*) foo;
+    int numOpenFDs = 1, ready, j;
+    int max_events = 1000;
+    struct epoll_event evlist[max_events];  // TODO: efficient memory allocation
+    //printf(" event listener: epfd %d \n", epfd);
+    while(numOpenFDs > 0) {
+        //printf("%s\n", "about to epoll_wait");
+        ready = epoll_wait(epfd, evlist, max_events, -1);
+        if(ready == -1) {
+            if(errno == EINTR)
+                continue;
+            else if(errno == EINVAL)
+            {
+                printf("epoll_wait invalid fd");
+                exit(-1);
+            }
+            else if (errno == EBADF){
+                printf("epoll_wait bad fd");
+                exit(-1);
+            }
+            else
+            {
+                perror("epoll_wait");
+                exit(-1);
+            }
+        }
+        //printf("ready: %d\n", ready);
+        struct thread_args *ta;
+        for(j=0; j< ready;j++){
+            ta = (struct thread_args*) evlist[j].data.ptr;
+            /*printf(" fd=%d; events: %s%s%s\n", ta->fd,
+                (evlist[j].events & EPOLLIN) ? "EPOLLIN " : "",
+                (evlist[j].events & EPOLLHUP) ? "EPOLLHUP " : "",
+                (evlist[j].events & EPOLLERR) ? "EPOLLERR " : "");
+                */
+            if(evlist[j].events & EPOLLIN){
+                ABT_cond_signal(ta->cond);
+            }
+            else if(evlist[j].events & (EPOLLHUP | EPOLLERR)){
+                printf("    closing fd %d \n", ta->fd);
+                if(close(ta->fd) == -1)
+                    printf("close error");
+                numOpenFDs--;
+            }
+        }
+    }
+}
+
+int abt_io_socket_initialize(int events)
+{
+    ABT_pool g_pool;
+    ABT_xstream xstream;
+    ABT_thread listener;
+    ABT_pool_create_basic(ABT_POOL_FIFO, ABT_POOL_ACCESS_MPMC, ABT_TRUE, &g_pool);
+    ABT_xstream_create_basic(ABT_SCHED_DEFAULT, 1, &g_pool, ABT_SCHED_CONFIG_NULL, &xstream);
+    ABT_xstream_start(xstream);
+    int epfd = epoll_create(1);
+    //printf(" epoll created fd %d \n", epfd);
+    ABT_thread_create(g_pool, event_listener, &epfd, ABT_THREAD_ATTR_NULL, listener);
+    return epfd;
+}
+
+io_instance_t* abt_io_register_thread(struct thread_args* ta)
+{
+    // register to epoll handler
+    io_instance_t* instance = (io_instance_t*) malloc(sizeof(instance));
+    struct epoll_event ev;
+    ABT_mutex mutex;
+    ABT_cond cond;
+    mutex = (ABT_mutex) malloc(sizeof(mutex));
+    cond = (ABT_cond) malloc(sizeof(cond));
+    ABT_cond_create(&cond);
+    //printf("Lib: register: client fd = %d\n", ta->fd);
+    ev.events = EPOLLIN;
+    ev.data.ptr = (void *)ta;
+    //printf("Lib: register: epoll fd = %d\n", ta->epfd);
+    //printf("Lib: register: client 2fd = %d\n", ta->fd);
+    ta->cond = cond;
+    if(epoll_ctl(ta->epfd, EPOLL_CTL_ADD, ta->fd, &ev) == -1){
+        return NULL;
+    }
+    instance->epfd = ta->epfd;
+    instance->mutex = mutex;
+    instance->cond = cond;
+    return instance;
+}
+
+ssize_t abt_io_epoll_read(io_instance_t* instance, int fd, const void *buf, size_t count)
+{
+    // ABT_eventual_wait()
+    // read()
+    // return
+    ssize_t ret = -1;
+    // how to attain mutex and cond??
+    //printf("about to cond_wait %d", fd);
+    ABT_cond_wait(instance->cond, instance->mutex);
+    int r = read(fd, (char *)buf, count);
+    if(r < 0)
+        ret = -errno;
+    else
+        ret = r;
+    return ret;
+}
+
+//
 //
